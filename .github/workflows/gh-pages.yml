@@ -1,0 +1,52 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [ develop ]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '.github/workflows/gh-pages.yml'
+  release:
+    types: [published]
+  tag:
+    - '*'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.x
+      - run: pip install mkdocs-material mkdocs-get-deps mkdocs-material-extensions mkdocs-multilang mkdocs-static-i18n mike
+      - name: Deploy to GitHub Pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          
+          # 判断触发事件类型
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            # 发布事件：使用release版本号
+            RELEASE_VERSION="${{ github.event.release.tag_name }}"
+            echo "Deploying release version: $RELEASE_VERSION"
+            mike deploy --push --remote origin $RELEASE_VERSION latest
+            mike set-default latest
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
+            # 标签推送事件：使用标签名作为版本号
+            TAG_VERSION="${GITHUB_REF##*/}"  # 提取标签名（去掉refs/tags/前缀）
+            echo "Deploying tag version: $TAG_VERSION"
+            mike deploy --push --remote origin $TAG_VERSION
+          else
+            # 分支推送事件：只更新latest版本
+            echo "Deploying latest version"
+            mike deploy --push --remote origin latest
+            mike set-default latest
+          fi
